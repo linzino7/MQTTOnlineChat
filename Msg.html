@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml" ng-app="rtwApp">
+<head>
+    <meta charset="utf-8" />
+    <title>完成版:Mqtt-Sub</title>
+    <link rel="icon" type="image/png" href="assets/imgs/ok.ico">
+    <link href="assets/css/bootstrap.css" rel="stylesheet" />       <!-- 讓網頁漂亮一點的CSS Style -->
+    <link href="assets/css/main.css" rel="stylesheet" />            <!-- 讓表單與角落離開一點 -->
+    <!-- <script src="assets/js/jquery-3.0.0.min.js"></script>  -->         <!-- 操控網頁元件的函式庫 -->
+    <script src="assets/js/mqttws31.min.js"></script>               <!-- 連結MQTT Broker的函式庫 -->
+    <script src="assets/js/Math.uuid.js"></script>                  <!-- 一個產生Unique ID的函式庫 -->
+    <script src="assets/js/angular.min.js"></script>                <!-- 操控網頁元件的函式庫 -->
+</head>
+<body ng-controller="rtwAppCtrl">
+    <h3>Mqtt - 訊息主題的訂閱</h3>
+    <!-- 一個簡單的網頁表單UI -->
+    <form>
+        <!-- Mqtt Host/Port: <br />
+        <input type="text" id="mqtt_host" value="192.168.136.130"/> <input type="text" id="mqtt_port"  value="9001" /> <br />
+        Topic: <br />
+        <input type="text" id="topic" value="Message" /><br /> -->
+        <input type="button" id="connect" value="Connect" ng-click="action.Connect()"/>
+
+        Username: <br />
+        <input type="text" id="name" ng-model="vm.username"/><br />
+        Message: <br />
+        <input type="text" id="message" ng-model="vm.message"/> <br/>
+        <input type="button" id="sendmessage" value="Send" ng-click="action.Send_Message()"/> <br/><br/>
+        
+    </form>
+    
+    <table class="table-bordered" ng-show="vm.has_participant">
+        <tr>
+            <th> msg </th>
+        </tr>
+        <tr ng-repeat="participant in vm.participants">
+            <td>{{participant.MSG}}</td>
+        </tr>
+    </table>
+
+
+    <!-- 程式邏輯 -->
+    <script>
+        // 全域變數
+        var mqtt_client;
+        var mqtt_broker_host;
+        var mqtt_broker_port;
+        var topic_subscribed = false;
+        var topic;
+
+
+        // Define the module
+        var rtwApp = angular.module('rtwApp', []);
+
+        // Define the controller
+        rtwApp.controller('rtwAppCtrl', function ($scope) {
+            // 初始view model的資料與變數
+            $scope.vm = {};
+            $scope.vm.username = "";
+            $scope.vm.message = "";
+            $scope.vm.participants = [];
+            $scope.vm.has_participant = true;
+
+            // 設定UI會觸發的動作
+            $scope.action = {};
+            $scope.action.Connect = function () {
+                console.log("ClickConnectButton");
+
+                // 從UI取得mqtt broker的連接資訊
+                mqtt_broker_host = "192.168.136.130";
+                mqtt_broker_port = "9001";
+
+
+                // 產生mqtt連結client物件的instance
+                mqtt_client = new Paho.MQTT.Client(mqtt_broker_host, Number(mqtt_broker_port), Math.uuid(8, 16));
+
+                // 設定某些事件的回呼處理的functions
+                mqtt_client.onConnectionLost = onConnectionLost;
+                mqtt_client.onMessageArrived = onMessageArrived;
+
+                // 連接mqtt broker
+                mqtt_client.connect({ onSuccess: onConnect });
+
+
+
+
+                // 當成功建立mqtt broker的連結時會被呼叫的function
+                function onConnect() {
+                    console.log("onConnect");
+                    //成功後訂閱
+                    onSubscribe();                   
+                }
+
+                // 當與mqtt broker的連結被斷開時會被呼叫的function
+                function onConnectionLost(responseObject) {
+                    if (responseObject.errorCode !== 0) {
+                        console.log("onConnectionLost:" + responseObject.errorMessage);
+                    }
+                    
+                }
+
+                // 當訂閱的主題有訊息時會被呼叫的callback function
+                function onMessageArrived(message) {
+                    // 把訊息的主要資訊擷取出來
+                    var topic = message.destinationName;
+                    // 建構一個訊息資訊物件
+                    var msgObj = {
+                        'topic': message.destinationName,
+                        'retained': message.retained,
+                        'qos': message.qos,
+                        'payload': message.payloadString
+                    };
+
+                    
+                    
+                    $scope.vm.participants.push({
+                        MSG: msgObj.payload ,
+                    });
+
+                    //JSON.parse("{'name': 'ewfwefwef','message':'wefwf232'}")
+                    //"{'name': 'ewfwefwef','message':'wefwf232'}"
+
+                    $scope.vm.has_participant = true;
+
+                    // 打印到Browser的debug console
+                    console.log("onMessageArrived:" + JSON.stringify(msgObj));
+                    // 使用html的alert視窗來秀出訊息
+                    alert(JSON.stringify(msgObj));
+                }
+                
+                // 
+                function onSubscribe() {
+                    console.log("onSubscribe");
+                    //訂閱
+                    topic = "Message";
+                    if (topic_subscribed == true) {
+                        // 要解除訂閱
+                        mqtt_client.unsubscribe(topic);
+                        topic_subscribed = false; // 更新flag
+                    } else {
+                        // 要訂閱訊息主題
+                        mqtt_client.subscribe(topic);
+                        topic_subscribed = true; // 更新flag
+                    }
+                    
+                }                    
+            };
+            
+            // 傳送訊息
+
+            $scope.action.Send_Message = function () {
+                //var msgCol="{'name': '"+$scope.vm.username+"','message':'"+$scope.vm.message+"'}";
+                var msgCol=" " + $scope.vm.username+":"+$scope.vm.message;
+                var mqtt_message = new Paho.MQTT.Message(msgCol);
+                mqtt_message.destinationName = topic;
+                mqtt_client.send(mqtt_message);
+            };
+
+            // Utility函式
+            reset_variables = function () {
+                $scope.vm.message = "";
+            };
+        });
+    // -------------------------
+        
+            
+            
+    
+    </script>
+</body>
+</html>
